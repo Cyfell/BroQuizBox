@@ -2,14 +2,9 @@
 #include <ESP8266WiFi.h>
 #include <WiFiClient.h>
 #include <ESP8266WebServer.h>
+#include <ESP8266HTTPClient.h>
 
 /****************** DEFINES ***********/
-// Access point configuration
-#define AP_SSID       "test_esp"
-#define AP_PSK        "test"
-
-#define WIFI_CONNECT_MAX_ATTEMPT 15
-
 // GPIO configuration
 #define GPIO0_BUTTON  0
 #define GPIO1_TX      1
@@ -25,25 +20,28 @@
 typedef enum
 {
   E_WIFI_STATION_SCAN,
-  E_WIFI_AP,
   E_WIFI_STATION_CONNECTED
 }EGeneralState;
 
 /************* GLOBAL VARIABLES ************/
-static ESP8266WebServer gServer(80);
-static EGeneralState  gEState = E_WIFI_STATION_SCAN;
+static  EGeneralState       gEState               = E_WIFI_STATION_SCAN;
+
+static  char                gWifiStationSSID[32]  = "ArthurWifi";
+static  char                gWifiStationPWD[64]   = "tuturwifi";
+
+WiFiClient client;
+HTTPClient http;
+const char* serverName = "http://192.168.137.153:8080/answer/1";
+int httpResponseCode = 0;
+bool BigButtonHasBeenPressed = false;
 
 /********************** ISR ****************/
 // Catch button ISR
 void ICACHE_RAM_ATTR IsrBigButtonPushed() {
-  digitalWrite(GPIO3_LED, LED_ON);
+  BigButtonHasBeenPressed = true;
 }
 
 /********************** APP ***************/
-void handleRoot() {
-  gServer.send(200, "text/html", "<h1>You are connected</h1>");
-}
-
 void setup() {
   // Setup GPIOS
   pinMode(GPIO3_LED, OUTPUT);
@@ -52,91 +50,94 @@ void setup() {
 
   // Start debug serial
   //Serial.begin(115200);
-  Serial.println();
-  Serial.println("*******START OF PROGRAM*****");
-  Serial.print("max wifi attempt : ");
-  Serial.println(WIFI_CONNECT_MAX_ATTEMPT);
-
+  //Serial.println();
+  //Serial.println("*******START OF PROGRAM*****");
 }
 
 void loop() {
-  char WifiStationSSID[32] = "ArthurWifi";
-  char WifiStationPWD[64] = "tuturwifi";
-  uint8_t WifiConnectAttempt = 0U;
-
 
   switch (gEState)
   {
     case E_WIFI_STATION_SCAN:
-      Serial.println("New sate : E_WIFI_STATION_SCAN");
-      WifiConnectAttempt = 0U;
+      //Serial.println("New sate : E_WIFI_STATION_SCAN");
       // Try to connect to wifi station
       WiFi.mode(WIFI_STA);
-      WiFi.begin(WifiStationSSID, WifiStationPWD);
+      WiFi.begin(gWifiStationSSID, gWifiStationPWD);
 
-      Serial.print("scan start : ssid=");
-      Serial.print(WifiStationSSID);
-      Serial.print(", pwd=");
-      Serial.println(WifiStationPWD);
+      //Serial.print("scan start : ssid=");
+      //Serial.print(gWifiStationSSID);
+      //Serial.print(", pwd=");
+      //Serial.println(gWifiStationPWD);
 
       // Wait for connection
-      while ((WiFi.status() != WL_CONNECTED) && (WifiConnectAttempt < WIFI_CONNECT_MAX_ATTEMPT))
+      while ((WiFi.status() != WL_CONNECTED))
       {
-        WifiConnectAttempt++;
-        digitalWrite(GPIO2_LED, LED_ON);
-        delay(500);
         digitalWrite(GPIO2_LED, LED_OFF);
         delay(500);
-        Serial.print(".");
+        digitalWrite(GPIO2_LED, LED_ON);
+        delay(500);
+        //Serial.print(".");
       }
 
       if (WiFi.status() == WL_CONNECTED)
       {
         WiFi.setAutoReconnect(true);
-        Serial.println();
-        Serial.print("Connected, IP address: ");
-        Serial.println(WiFi.localIP());
-        Serial.print("RSSI : ");
-        Serial.println(WiFi.RSSI());
+        //Serial.println();
+        //Serial.print("Connected, IP address: ");
+        //Serial.println(WiFi.localIP());
+        //Serial.print("RSSI : ");
+        //Serial.println(WiFi.RSSI());
         gEState = E_WIFI_STATION_CONNECTED;
       }
       else
       {
-        Serial.println();
-        Serial.println("Cannot connect to WIFI");
-        //gEState = E_WIFI_AP;
+        //Serial.println();
+        //Serial.println("Cannot connect to WIFI");
       }
-      break;
-
-    case E_WIFI_AP:
-      Serial.println("New sate : E_WIFI_AP");
-      // Start AP wifi
-      WiFi.softAP(AP_SSID, AP_PSK);
-
-      gServer.on("/", handleRoot);
       break;
 
     case E_WIFI_STATION_CONNECTED:
       // Attach ISR to button
       attachInterrupt(GPIO0_BUTTON, IsrBigButtonPushed, FALLING);
       digitalWrite(GPIO2_LED, LED_ON);
-      Serial.println("New sate : E_WIFI_STATION_CONNECTED");
+      //Serial.println("New sate : E_WIFI_STATION_CONNECTED");
       while(1)
       {
-        delay(5000);
-      }
+        if (BigButtonHasBeenPressed == true)
+        {
+          BigButtonHasBeenPressed = false;
+          // Your Domain name with URL path or IP address with path
+          http.begin(client, serverName);
 
+          // Send HTTP POST request
+          httpResponseCode = http.POST("");
+
+          if (httpResponseCode == 200)
+          {
+            String payload = http.getString();
+            //Serial.print("response from serv : ");
+            //Serial.println(payload);
+            if (strstr(payload.c_str(), "true") != NULL)
+            {
+              //Serial.print("J'ai la main !!!!");
+              digitalWrite(GPIO3_LED, LED_ON);
+              delay(5000);
+              digitalWrite(GPIO3_LED, LED_OFF);
+            }
+            else
+            {
+              //Serial.print("Trop tard :(((");
+            }
+          }
+        }
+        delay(20);
+      }
       detachInterrupt(GPIO0_BUTTON);
       break;
 
     default:
-      Serial.println("New sate : UNKNOWN");
+      //Serial.println("New sate : UNKNOWN");
       gEState = E_WIFI_STATION_SCAN;
       break;
   }
-  gServer.handleClient();
-  // digitalWrite(LED_BUILTIN, LED_OFF);
-  // delay(1000);
-  // digitalWrite(LED_BUILTIN, LED_ON);
-  // delay(2000);
 }
