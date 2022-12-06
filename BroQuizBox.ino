@@ -34,6 +34,7 @@ HTTPClient http;
 const char* serverName = "http://192.168.137.153:8080/answer/1";
 int httpResponseCode = 0;
 bool BigButtonHasBeenPressed = false;
+String payload;
 
 /********************** ISR ****************/
 // Catch button ISR
@@ -114,7 +115,7 @@ void loop() {
 
           if (httpResponseCode == 200)
           {
-            String payload = http.getString();
+            payload = http.getString();
             //Serial.print("response from serv : ");
             //Serial.println(payload);
             if (strstr(payload.c_str(), "true") != NULL)
